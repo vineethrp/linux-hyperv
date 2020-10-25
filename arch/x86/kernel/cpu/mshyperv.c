@@ -259,9 +259,17 @@ static void __init ms_hyperv_init_platform(void)
 		x86_platform.calibrate_cpu = hv_get_tsc_khz;
 	}
 
-	if (ms_hyperv.hints & HV_X64_ENLIGHTENED_VMCS_RECOMMENDED) {
+	/*
+	 * AMD cpus do not need enlightened VMCS as VMCB is already a
+	 * datastructure in memory. We need to get the nested features
+	 * if SVM is enabled.
+	 */
+	if (boot_cpu_has(X86_FEATURE_SVM) ||
+	    ms_hyperv.hints & HV_X64_ENLIGHTENED_VMCS_RECOMMENDED) {
 		ms_hyperv.nested_features =
 			cpuid_eax(HYPERV_CPUID_NESTED_FEATURES);
+		pr_info("Hyper-V nested_features: 0x%x\n",
+			ms_hyperv.nested_features);
 	}
 
 	/*

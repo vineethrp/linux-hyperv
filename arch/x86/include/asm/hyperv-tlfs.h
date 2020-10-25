@@ -115,6 +115,14 @@
 #define HV_X64_NESTED_GUEST_MAPPING_FLUSH		BIT(18)
 #define HV_X64_NESTED_MSR_BITMAP			BIT(19)
 
+/*
+ * This bit specific to AMD and specifies that enlightened TLB flush
+ * is supported. If guest opts in to this feature, invlpga does only
+ * ASID flushes and do not affect TLB entries derived from NPT. Use
+ * hypercalls to invalidate TLB entries derived from NPT.
+ */
+#define HV_X64_NESTED_ENLIGHTENED_TLB			BIT(22)
+
 /* Hyper-V specific model specific registers (MSRs) */
 
 /* MSR used to identify the guest OS. */

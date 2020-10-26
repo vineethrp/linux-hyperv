@@ -141,4 +141,16 @@ int kvm_vm_ioctl_hv_eventfd(struct kvm *kvm, struct kvm_hyperv_eventfd *args);
 int kvm_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 		     struct kvm_cpuid_entry2 __user *entries);
 
+static inline void kvm_update_arch_tdp_pointer(struct kvm *kvm,
+		struct kvm_vcpu *vcpu, u64 tdp_pointer)
+{
+	spin_lock(&to_kvm_hv(kvm)->tdp_pointer_lock);
+	to_hv_vcpu(vcpu)->tdp_pointer = tdp_pointer;
+	to_kvm_hv(kvm)->tdp_pointers_match = TDP_POINTERS_CHECK;
+	spin_unlock(&to_kvm_hv(kvm)->tdp_pointer_lock);
+}
+
+int kvm_hv_remote_flush_tlb(struct kvm *kvm);
+int kvm_hv_remote_flush_tlb_with_range(struct kvm *kvm,
+		struct kvm_tlb_range *range);
 #endif

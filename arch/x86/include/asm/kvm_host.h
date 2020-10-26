@@ -530,6 +530,12 @@ struct kvm_vcpu_hv {
 	struct kvm_vcpu_hv_stimer stimer[HV_SYNIC_STIMER_COUNT];
 	DECLARE_BITMAP(stimer_pending_bitmap, HV_SYNIC_STIMER_COUNT);
 	cpumask_t tlb_flush;
+	/*
+	 * Two Dimensional paging CR3
+	 * EPTP for Intel
+	 * nCR3 for AMD
+	 */
+	u64 tdp_pointer;
 };
 
 /* Xen HVM per vcpu emulation context */
@@ -884,6 +890,12 @@ struct kvm_hv_syndbg {
 	u64 options;
 };
 
+enum tdp_pointers_status {
+	TDP_POINTERS_CHECK = 0,
+	TDP_POINTERS_MATCH = 1,
+	TDP_POINTERS_MISMATCH = 2
+};
+
 /* Hyper-V emulation context */
 struct kvm_hv {
 	struct mutex hv_lock;
@@ -908,6 +920,9 @@ struct kvm_hv {
 
 	struct hv_partition_assist_pg *hv_pa_pg;
 	struct kvm_hv_syndbg hv_syndbg;
+
+	enum tdp_pointers_status tdp_pointers_match;
+	spinlock_t tdp_pointer_lock;
 };
 
 struct msr_bitmap_range {

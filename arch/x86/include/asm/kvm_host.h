@@ -792,6 +792,13 @@ struct kvm_vcpu_arch {
 	/* AMD MSRC001_0015 Hardware Configuration */
 	u64 msr_hwcr;
 
+	/*
+	 * Two Dimensional paging CR3
+	 * EPT for Intel
+	 * NPT for AMD
+	 */
+	u64 tdp_pointer;
+
 	/* pv related cpuid info */
 	struct {
 		/*
@@ -900,6 +907,12 @@ enum kvm_irqchip_mode {
 #define APICV_INHIBIT_REASON_IRQWIN     3
 #define APICV_INHIBIT_REASON_PIT_REINJ  4
 #define APICV_INHIBIT_REASON_X2APIC	5
+
+enum tdp_pointers_status {
+	TDP_POINTERS_CHECK = 0,
+	TDP_POINTERS_MATCH = 1,
+	TDP_POINTERS_MISMATCH = 2
+};
 
 struct kvm_arch {
 	unsigned long n_used_mmu_pages;
@@ -1014,6 +1027,9 @@ struct kvm_arch {
 	struct list_head tdp_mmu_roots;
 	/* List of struct tdp_mmu_pages not being used as roots */
 	struct list_head tdp_mmu_pages;
+
+	enum tdp_pointers_status tdp_pointers_match;
+	spinlock_t tdp_pointer_lock;
 };
 
 struct kvm_vm_stat {

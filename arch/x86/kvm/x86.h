@@ -126,6 +126,15 @@ static inline bool mmu_is_nested(struct kvm_vcpu *vcpu)
 	return vcpu->arch.walk_mmu == &vcpu->arch.nested_mmu;
 }
 
+static inline void kvm_update_arch_tdp_pointer(struct kvm *kvm,
+		struct kvm_vcpu* vcpu, u64 tdp_pointer)
+{
+	spin_lock(&kvm->arch.tdp_pointer_lock);
+	vcpu->arch.tdp_pointer = tdp_pointer;
+	kvm->arch.tdp_pointers_match = TDP_POINTERS_CHECK;
+	spin_unlock(&kvm->arch.tdp_pointer_lock);
+}
+
 static inline void kvm_vcpu_flush_tlb_current(struct kvm_vcpu *vcpu)
 {
 	++vcpu->stat.tlb_flush;

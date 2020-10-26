@@ -10115,6 +10115,10 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.pending_external_vector = -1;
 	vcpu->arch.preempted_in_kernel = false;
 
+#if IS_ENABLED(CONFIG_HYPERV)
+	vcpu->arch.tdp_pointer = INVALID_PAGE;
+#endif
+
 	r = static_call(kvm_x86_vcpu_create)(vcpu);
 	if (r)
 		goto free_guest_fpu;
@@ -10470,7 +10474,6 @@ void kvm_arch_free_vm(struct kvm *kvm)
 	vfree(kvm);
 }
 
-
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	if (type)
@@ -10497,6 +10500,10 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	pvclock_update_vm_gtod_copy(kvm);
 
 	kvm->arch.guest_can_read_msr_platform_info = true;
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	spin_lock_init(&kvm->arch.tdp_pointer_lock);
+#endif
 
 	INIT_DELAYED_WORK(&kvm->arch.kvmclock_update_work, kvmclock_update_fn);
 	INIT_DELAYED_WORK(&kvm->arch.kvmclock_sync_work, kvmclock_sync_fn);

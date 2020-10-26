@@ -50,6 +50,12 @@
 /* Hyper-V HV_X64_MSR_SYNDBG_OPTIONS bits */
 #define HV_X64_SYNDBG_OPTION_USE_HCALLS		BIT(2)
 
+enum tdp_pointers_status {
+	TDP_POINTERS_CHECK = 0,
+	TDP_POINTERS_MATCH = 1,
+	TDP_POINTERS_MISMATCH = 2
+};
+
 static inline struct kvm_hv *to_kvm_hv(struct kvm *kvm)
 {
 	return &kvm->arch.hyperv;
@@ -141,4 +147,18 @@ int kvm_vm_ioctl_hv_eventfd(struct kvm *kvm, struct kvm_hyperv_eventfd *args);
 int kvm_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 		     struct kvm_cpuid_entry2 __user *entries);
 
+#if IS_ENABLED(CONFIG_HYPERV)
+static inline void kvm_update_arch_tdp_pointer(struct kvm *kvm,
+		struct kvm_vcpu *vcpu, u64 tdp_pointer)
+{
+	spin_lock(&kvm->arch.tdp_pointer_lock);
+	vcpu->arch.tdp_pointer = tdp_pointer;
+	kvm->arch.tdp_pointers_match = TDP_POINTERS_CHECK;
+	spin_unlock(&kvm->arch.tdp_pointer_lock);
+}
+
+int kvm_hv_remote_flush_tlb(struct kvm *kvm);
+int kvm_hv_remote_flush_tlb_with_range(struct kvm *kvm,
+		struct kvm_tlb_range *range);
+#endif
 #endif

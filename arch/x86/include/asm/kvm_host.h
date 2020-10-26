@@ -838,6 +838,15 @@ struct kvm_vcpu_arch {
 
 	/* Protected Guests */
 	bool guest_state_protected;
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	/*
+	 * Two Dimensional paging CR3
+	 * EPTP for Intel
+	 * nCR3 for AMD
+	 */
+	u64 tdp_pointer;
+#endif
 };
 
 struct kvm_lpage_info {
@@ -1079,6 +1088,11 @@ struct kvm_arch {
 	 */
 	spinlock_t tdp_mmu_pages_lock;
 #endif /* CONFIG_X86_64 */
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	int tdp_pointers_match;
+	spinlock_t tdp_pointer_lock;
+#endif
 };
 
 struct kvm_vm_stat {

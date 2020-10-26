@@ -43,6 +43,8 @@
 #include "svm.h"
 #include "svm_ops.h"
 
+#include "svm_onhyperv.h"
+
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
 
 MODULE_AUTHOR("Qumranet");
@@ -997,6 +999,8 @@ static __init int svm_hardware_setup(void)
 	kvm_configure_mmu(npt_enabled, get_max_npt_level(), PG_LEVEL_1G);
 	pr_info("kvm: Nested Paging %sabled\n", npt_enabled ? "en" : "dis");
 
+	svm_hv_hardware_setup();
+
 	if (nrips) {
 		if (!boot_cpu_has(X86_FEATURE_NRIPS))
 			nrips = false;
@@ -1273,6 +1277,8 @@ static void init_vmcb(struct vcpu_svm *svm)
 			sev_es_init_vmcb(svm);
 		}
 	}
+
+	svm_hv_init_vmcb(svm->vmcb);
 
 	vmcb_mark_all_dirty(svm->vmcb);
 
@@ -3966,6 +3972,8 @@ static void svm_load_mmu_pgd(struct kvm_vcpu *vcpu, unsigned long root,
 	if (npt_enabled) {
 		svm->vmcb->control.nested_cr3 = cr3;
 		vmcb_mark_dirty(svm->vmcb, VMCB_NPT);
+
+		svm_hv_update_tdp_pointer(vcpu, cr3);
 
 		/* Loading L2's CR3 is handled by enter_svm_guest_mode.  */
 		if (!test_bit(VCPU_EXREG_CR3, (ulong *)&vcpu->arch.regs_avail))

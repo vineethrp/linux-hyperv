@@ -322,9 +322,31 @@ static inline void __unused_size_checks(void)
 	BUILD_BUG_ON(sizeof(struct ghcb)		!= EXPECTED_GHCB_SIZE);
 }
 
+
+#if IS_ENABLED(CONFIG_HYPERV)
+struct __packed hv_enlightenments {
+	struct __packed hv_enlightenments_control {
+		u32 nested_flush_hypercall:1;
+		u32 msr_bitmap:1;
+		u32 enlightened_npt_tlb: 1;
+		u32 reserved:29;
+	} hv_enlightenments_control;
+	u32 hv_vp_id;
+	u64 hv_vm_id;
+	u64 partition_assist_page;
+	u64 reserved;
+};
+#define VMCB_CONTROL_END	992	// 32 bytes for Hyper-V
+#else
+#define VMCB_CONTROL_END	1024
+#endif
+
 struct vmcb {
 	struct vmcb_control_area control;
-	u8 reserved_control[1024 - sizeof(struct vmcb_control_area)];
+	u8 reserved_control[VMCB_CONTROL_END - sizeof(struct vmcb_control_area)];
+#if IS_ENABLED(CONFIG_HYPERV)
+	struct hv_enlightenments hv_enlightenments;
+#endif
 	struct vmcb_save_area save;
 } __packed;
 

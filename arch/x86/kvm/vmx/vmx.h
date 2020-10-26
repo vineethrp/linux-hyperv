@@ -298,15 +298,8 @@ struct vcpu_vmx {
 	 */
 	u64 msr_ia32_feature_control;
 	u64 msr_ia32_feature_control_valid_bits;
-	u64 ept_pointer;
 
 	struct pt_desc pt_desc;
-};
-
-enum ept_pointers_status {
-	EPT_POINTERS_CHECK = 0,
-	EPT_POINTERS_MATCH = 1,
-	EPT_POINTERS_MISMATCH = 2
 };
 
 struct kvm_vmx {
@@ -315,9 +308,6 @@ struct kvm_vmx {
 	unsigned int tss_addr;
 	bool ept_identity_pagetable_done;
 	gpa_t ept_identity_map_addr;
-
-	enum ept_pointers_status ept_pointers_match;
-	spinlock_t ept_pointer_lock;
 };
 
 bool nested_vmx_allowed(struct kvm_vcpu *vcpu);

@@ -31,6 +31,7 @@
 #include <linux/eventfd.h>
 
 #include <asm/apicdef.h>
+#include <asm/mshyperv.h>
 #include <trace/events/kvm.h>
 
 #include "trace.h"
@@ -2094,3 +2095,83 @@ int kvm_vcpu_ioctl_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 
 	return 0;
 }
+
+/* check_ept_pointer() should be under protection of ept_pointer_lock. */
+static void check_ept_pointer_match(struct kvm *kvm)
+{
+	struct kvm_vcpu *vcpu;
+	u64 tmp_eptp = INVALID_PAGE;
+	int i;
+
+	kvm_for_each_vcpu(i, vcpu, kvm) {
+		if (!VALID_PAGE(tmp_eptp)) {
+			tmp_eptp = vcpu->arch.ept_pointer;
+		} else if (tmp_eptp != vcpu->arch.ept_pointer) {
+			kvm->arch.ept_pointers_match
+				= EPT_POINTERS_MISMATCH;
+			return;
+		}
+	}
+
+	kvm->arch.ept_pointers_match = EPT_POINTERS_MATCH;
+}
+
+static int kvm_fill_hv_flush_list_func(struct hv_guest_mapping_flush_list *flush,
+		void *data)
+{
+	struct kvm_tlb_range *range = data;
+
+	return hyperv_fill_flush_guest_mapping_list(flush, range->start_gfn,
+			range->pages);
+}
+
+static inline int __hv_remote_flush_tlb_with_range(struct kvm *kvm,
+		struct kvm_vcpu *vcpu, struct kvm_tlb_range *range)
+{
+	u64 ept_pointer = vcpu->arch.ept_pointer;
+
+	/*
+	 * FLUSH_GUEST_PHYSICAL_ADDRESS_SPACE hypercall needs address
+	 * of the base of EPT PML4 table, strip off EPT configuration
+	 * information.
+	 */
+	if (range)
+		return hyperv_flush_guest_mapping_range(ept_pointer & PAGE_MASK,
+				kvm_fill_hv_flush_list_func, (void *)range);
+	else
+		return hyperv_flush_guest_mapping(ept_pointer & PAGE_MASK);
+}
+
+int kvm_hv_remote_flush_tlb_with_range(struct kvm *kvm,
+		struct kvm_tlb_range *range)
+{
+	struct kvm_vcpu *vcpu;
+	int ret = 0, i;
+
+	spin_lock(&kvm->arch.ept_pointer_lock);
+
+	if (kvm->arch.ept_pointers_match == EPT_POINTERS_CHECK)
+		check_ept_pointer_match(kvm);
+
+	if (kvm->arch.ept_pointers_match != EPT_POINTERS_MATCH) {
+		kvm_for_each_vcpu(i, vcpu, kvm) {
+			/* If ept_pointer is invalid pointer, bypass flush request. */
+			if (VALID_PAGE(vcpu->arch.ept_pointer))
+				ret |= __hv_remote_flush_tlb_with_range(
+					kvm, vcpu, range);
+		}
+	} else {
+		ret = __hv_remote_flush_tlb_with_range(kvm,
+				kvm_get_vcpu(kvm, 0), range);
+	}
+
+	spin_unlock(&kvm->arch.ept_pointer_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(kvm_hv_remote_flush_tlb_with_range);
+
+int kvm_hv_remote_flush_tlb(struct kvm *kvm)
+{
+	return kvm_hv_remote_flush_tlb_with_range(kvm, NULL);
+}
+EXPORT_SYMBOL_GPL(kvm_hv_remote_flush_tlb);

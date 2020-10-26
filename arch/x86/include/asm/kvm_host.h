@@ -788,6 +788,8 @@ struct kvm_vcpu_arch {
 
 	/* AMD MSRC001_0015 Hardware Configuration */
 	u64 msr_hwcr;
+
+	u64 ept_pointer;
 };
 
 struct kvm_lpage_info {
@@ -872,6 +874,12 @@ enum kvm_irqchip_mode {
 #define APICV_INHIBIT_REASON_IRQWIN     3
 #define APICV_INHIBIT_REASON_PIT_REINJ  4
 #define APICV_INHIBIT_REASON_X2APIC	5
+
+enum ept_pointers_status {
+	EPT_POINTERS_CHECK = 0,
+	EPT_POINTERS_MATCH = 1,
+	EPT_POINTERS_MISMATCH = 2
+};
 
 struct kvm_arch {
 	unsigned long n_used_mmu_pages;
@@ -963,6 +971,9 @@ struct kvm_arch {
 
 	struct kvm_pmu_event_filter *pmu_event_filter;
 	struct task_struct *nx_lpage_recovery_thread;
+
+	enum ept_pointers_status ept_pointers_match;
+	spinlock_t ept_pointer_lock;
 };
 
 struct kvm_vm_stat {

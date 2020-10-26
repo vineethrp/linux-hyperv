@@ -129,4 +129,7 @@ int kvm_vm_ioctl_hv_eventfd(struct kvm *kvm, struct kvm_hyperv_eventfd *args);
 int kvm_vcpu_ioctl_get_hv_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid2 *cpuid,
 				struct kvm_cpuid_entry2 __user *entries);
 
+int kvm_hv_remote_flush_tlb(struct kvm *kvm);
+int kvm_hv_remote_flush_tlb_with_range(struct kvm *kvm,
+		struct kvm_tlb_range *range);
 #endif

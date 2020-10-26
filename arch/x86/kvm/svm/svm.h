@@ -35,6 +35,11 @@ static const u32 host_save_user_msrs[] = {
 extern u32 msrpm_offsets[MSRPM_OFFSETS] __read_mostly;
 extern bool npt_enabled;
 
+/*
+ * Clean bits in VMCB.
+ * Should update VMCB_ALL_CLEAN_MASK also
+ * if this enum is modified.
+ */
 enum {
 	VMCB_INTERCEPTS, /* Intercept vectors, TSC offset,
 			    pause filter count */
@@ -52,8 +57,24 @@ enum {
 			  * AVIC PHYSICAL_TABLE pointer,
 			  * AVIC LOGICAL_TABLE pointer
 			  */
-	VMCB_DIRTY_MAX,
+#if IS_ENABLED(CONFIG_HYPERV)
+	VMCB_HV_NESTED_ENLIGHTENMENTS = 31,
+#endif
 };
+
+#define __CLEAN_MASK (							\
+		(1U << VMCB_INTERCEPTS) | (1U << VMCB_PERM_MAP) |	\
+		(1U << VMCB_ASID) | (1U << VMCB_INTR) |			\
+		(1U << VMCB_NPT) | (1U << VMCB_CR) | (1U << VMCB_DR) |	\
+		(1U << VMCB_DT) | (1U << VMCB_SEG) | (1U << VMCB_CR2) |	\
+		(1U << VMCB_LBR) | (1U << VMCB_AVIC) 			\
+		)
+
+#if IS_ENABLED(CONFIG_HYPERV)
+#define VMCB_ALL_CLEAN_MASK (__CLEAN_MASK | (1U << VMCB_HV_NESTED_ENLIGHTENMENTS))
+#else
+#define VMCB_ALL_CLEAN_MASK __CLEAN_MASK
+#endif
 
 /* TPR and CR2 are always written before VMRUN */
 #define VMCB_ALWAYS_DIRTY_MASK	((1U << VMCB_INTR) | (1U << VMCB_CR2))
@@ -192,7 +213,7 @@ static inline void vmcb_mark_all_dirty(struct vmcb *vmcb)
 
 static inline void vmcb_mark_all_clean(struct vmcb *vmcb)
 {
-	vmcb->control.clean = ((1 << VMCB_DIRTY_MAX) - 1)
+	vmcb->control.clean = VMCB_ALL_CLEAN_MASK
 			       & ~VMCB_ALWAYS_DIRTY_MASK;
 }
 

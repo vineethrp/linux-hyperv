@@ -37,12 +37,15 @@
 #include <asm/spec-ctrl.h>
 #include <asm/cpu_device_id.h>
 #include <asm/traps.h>
+#include <asm/mshyperv.h>
 
 #include <asm/virtext.h>
 #include "trace.h"
 
 #include "svm.h"
 #include "svm_ops.h"
+
+#include "hyperv.h"
 
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
 
@@ -931,6 +934,8 @@ static __init void svm_set_cpu_caps(void)
 		kvm_cpu_cap_set(X86_FEATURE_VIRT_SSBD);
 }
 
+static struct kvm_x86_ops svm_x86_ops;
+
 static __init int svm_hardware_setup(void)
 {
 	int cpu;
@@ -999,6 +1004,16 @@ static __init int svm_hardware_setup(void)
 
 	kvm_configure_mmu(npt_enabled, get_max_npt_level(), PG_LEVEL_1G);
 	pr_info("kvm: Nested Paging %sabled\n", npt_enabled ? "en" : "dis");
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	if (ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_TLB
+	    && npt_enabled) {
+		pr_info("kvm: Hyper-V enlightened NPT TLB flush enabled\n");
+		svm_x86_ops.tlb_remote_flush = kvm_hv_remote_flush_tlb;
+		svm_x86_ops.tlb_remote_flush_with_range =
+				kvm_hv_remote_flush_tlb_with_range;
+	}
+#endif
 
 	if (nrips) {
 		if (!boot_cpu_has(X86_FEATURE_NRIPS))
@@ -1119,6 +1134,21 @@ static void svm_check_invpcid(struct vcpu_svm *svm)
 			svm_clr_intercept(svm, INTERCEPT_INVPCID);
 	}
 }
+
+#if IS_ENABLED(CONFIG_HYPERV)
+static void hv_init_vmcb(struct vmcb *vmcb)
+{
+	struct hv_enlightenments *hve = &vmcb->hv_enlightenments;
+
+	if (npt_enabled &&
+	    ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_TLB)
+		hve->hv_enlightenments_control.enlightened_npt_tlb = 1;
+}
+#else
+static inline void hv_init_vmcb(struct vmcb *vmcb)
+{
+}
+#endif
 
 static void init_vmcb(struct vcpu_svm *svm)
 {
@@ -1281,6 +1311,8 @@ static void init_vmcb(struct vcpu_svm *svm)
 			sev_es_init_vmcb(svm);
 		}
 	}
+
+	hv_init_vmcb(svm->vmcb);
 
 	vmcb_mark_all_dirty(svm->vmcb);
 
@@ -3974,6 +4006,11 @@ static void svm_load_mmu_pgd(struct kvm_vcpu *vcpu, unsigned long root,
 	if (npt_enabled) {
 		svm->vmcb->control.nested_cr3 = cr3;
 		vmcb_mark_dirty(svm->vmcb, VMCB_NPT);
+
+#if IS_ENABLED(CONFIG_HYPERV)
+		if (kvm_x86_ops.tlb_remote_flush)
+			kvm_update_arch_tdp_pointer(vcpu->kvm, vcpu, cr3);
+#endif
 
 		/* Loading L2's CR3 is handled by enter_svm_guest_mode.  */
 		if (!test_bit(VCPU_EXREG_CR3, (ulong *)&vcpu->arch.regs_avail))

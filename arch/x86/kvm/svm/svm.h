@@ -51,10 +51,15 @@ enum {
 			  * AVIC LOGICAL_TABLE pointer
 			  */
 	VMCB_DIRTY_MAX,
+#if IS_ENABLED(CONFIG_HYPERV)
+	VMCB_HV_NESTED_ENLIGHTENMENTS = 31,
+#endif
 };
 
 /* TPR and CR2 are always written before VMRUN */
 #define VMCB_ALWAYS_DIRTY_MASK	((1U << VMCB_INTR) | (1U << VMCB_CR2))
+
+extern u32 vmcb_all_clean_mask __read_mostly;
 
 struct kvm_sev_info {
 	bool active;		/* SEV enabled guest */
@@ -230,13 +235,18 @@ static inline void vmcb_mark_all_dirty(struct vmcb *vmcb)
 
 static inline void vmcb_mark_all_clean(struct vmcb *vmcb)
 {
-	vmcb->control.clean = ((1 << VMCB_DIRTY_MAX) - 1)
+	vmcb->control.clean = vmcb_all_clean_mask
 			       & ~VMCB_ALWAYS_DIRTY_MASK;
 }
 
 static inline void vmcb_mark_dirty(struct vmcb *vmcb, int bit)
 {
 	vmcb->control.clean &= ~(1 << bit);
+}
+
+static inline bool vmcb_is_clean(struct vmcb *vmcb, int bit)
+{
+	return (vmcb->control.clean & (1 << bit));
 }
 
 static inline struct vcpu_svm *to_svm(struct kvm_vcpu *vcpu)

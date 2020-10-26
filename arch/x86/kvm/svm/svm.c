@@ -31,6 +31,7 @@
 #include <asm/tlbflush.h>
 #include <asm/desc.h>
 #include <asm/debugreg.h>
+#include <asm/hypervisor.h>
 #include <asm/kvm_para.h>
 #include <asm/irq_remapping.h>
 #include <asm/spec-ctrl.h>
@@ -121,6 +122,8 @@ bool npt_enabled = true;
 #else
 bool npt_enabled;
 #endif
+
+u32 __read_mostly vmcb_all_clean_mask = ((1 << VMCB_DIRTY_MAX) - 1);
 
 /*
  * These 2 parameters are used to config the controls for Pause-Loop Exiting:
@@ -1050,6 +1053,11 @@ static __init int svm_hardware_setup(void)
 	 * this variable can be changed accordingly
 	 */
 	allow_smaller_maxphyaddr = !npt_enabled;
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	if (hypervisor_is_type(X86_HYPER_MS_HYPERV))
+		vmcb_all_clean_mask |= BIT(VMCB_HV_NESTED_ENLIGHTENMENTS);
+#endif
 
 	return 0;
 

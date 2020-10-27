@@ -650,6 +650,27 @@ static bool msr_write_intercepted(struct kvm_vcpu *vcpu, u32 msr)
 	return !!test_bit(bit_write,  &tmp);
 }
 
+#if IS_ENABLED(CONFIG_HYPERV)
+static inline void hv_vmcb_dirty_nested_enlightenments(struct kvm_vcpu *vcpu)
+{
+	struct vmcb *vmcb = to_svm(vcpu)->vmcb;
+
+	/*
+	 * vmcb can be NULL if called during early vcpu init.
+	 * And its okay not to mark vmcb dirty during vcpu init
+	 * as we mark it dirty unconditionally towards end of vcpu
+	 * init phase.
+	 */
+	if (vmcb && vmcb_is_clean(vmcb, VMCB_HV_NESTED_ENLIGHTENMENTS) &&
+	    vmcb->hv_enlightenments.hv_enlightenments_control.msr_bitmap)
+		vmcb_mark_dirty(vmcb, VMCB_HV_NESTED_ENLIGHTENMENTS);
+}
+#else
+static inline void hv_vmcb_dirty_nested_enlightenments(struct kvm_vcpu *vcpu)
+{
+}
+#endif
+
 static void set_msr_interception_bitmap(struct kvm_vcpu *vcpu, u32 *msrpm,
 					u32 msr, int read, int write)
 {
@@ -681,6 +702,9 @@ static void set_msr_interception_bitmap(struct kvm_vcpu *vcpu, u32 *msrpm,
 	write ? clear_bit(bit_write, &tmp) : set_bit(bit_write, &tmp);
 
 	msrpm[offset] = tmp;
+
+	hv_vmcb_dirty_nested_enlightenments(vcpu);
+
 }
 
 void set_msr_interception(struct kvm_vcpu *vcpu, u32 *msrpm, u32 msr,
@@ -1144,6 +1168,9 @@ static inline void hv_init_vmcb(struct vmcb *vmcb)
 	if (npt_enabled &&
 	    ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_TLB)
 		hve->hv_enlightenments_control.enlightened_npt_tlb = 1;
+
+	if (ms_hyperv.nested_features & HV_X64_NESTED_MSR_BITMAP)
+		hve->hv_enlightenments_control.msr_bitmap = 1;
 }
 #else
 static inline void hv_init_vmcb(struct vmcb *vmcb)

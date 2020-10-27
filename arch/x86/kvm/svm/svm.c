@@ -585,8 +585,8 @@ static bool msr_write_intercepted(struct kvm_vcpu *vcpu, unsigned msr)
 	return !!test_bit(bit_write,  &tmp);
 }
 
-static void set_msr_interception(u32 *msrpm, unsigned msr,
-				 int read, int write)
+static void set_msr_interception(struct vmcb *vmcb, u32 *msrpm,
+				 unsigned msr, int read, int write)
 {
 	u8 bit_read, bit_write;
 	unsigned long tmp;
@@ -609,9 +609,21 @@ static void set_msr_interception(u32 *msrpm, unsigned msr,
 	write ? clear_bit(bit_write, &tmp) : set_bit(bit_write, &tmp);
 
 	msrpm[offset] = tmp;
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	/*
+	 * vmcb can be NULL if called during early vcpu init.
+	 * And its okay not to mark vmcb dirty during vcpu init
+	 * as we mark it dirty unconditionally towards end of vcpu
+	 * init phase.
+	 */
+	if (vmcb && vmcb_is_clean(vmcb, VMCB_HV_NESTED_ENLIGHTENMENTS) &&
+	    vmcb->hv_enlightenments.hv_enlightenments_control.msr_bitmap)
+		vmcb_mark_dirty(vmcb, VMCB_HV_NESTED_ENLIGHTENMENTS);
+#endif
 }
 
-static void svm_vcpu_init_msrpm(u32 *msrpm)
+static void svm_vcpu_init_msrpm(struct vmcb *vmcb, u32 *msrpm)
 {
 	int i;
 
@@ -621,7 +633,8 @@ static void svm_vcpu_init_msrpm(u32 *msrpm)
 		if (!direct_access_msrs[i].always)
 			continue;
 
-		set_msr_interception(msrpm, direct_access_msrs[i].index, 1, 1);
+		set_msr_interception(vmcb, msrpm,
+				     direct_access_msrs[i].index, 1, 1);
 	}
 }
 
@@ -673,10 +686,14 @@ static void svm_enable_lbrv(struct vcpu_svm *svm)
 	u32 *msrpm = svm->msrpm;
 
 	svm->vmcb->control.virt_ext |= LBR_CTL_ENABLE_MASK;
-	set_msr_interception(msrpm, MSR_IA32_LASTBRANCHFROMIP, 1, 1);
-	set_msr_interception(msrpm, MSR_IA32_LASTBRANCHTOIP, 1, 1);
-	set_msr_interception(msrpm, MSR_IA32_LASTINTFROMIP, 1, 1);
-	set_msr_interception(msrpm, MSR_IA32_LASTINTTOIP, 1, 1);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTBRANCHFROMIP, 1, 1);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTBRANCHTOIP, 1, 1);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTINTFROMIP, 1, 1);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTINTTOIP, 1, 1);
 }
 
 static void svm_disable_lbrv(struct vcpu_svm *svm)
@@ -684,10 +701,14 @@ static void svm_disable_lbrv(struct vcpu_svm *svm)
 	u32 *msrpm = svm->msrpm;
 
 	svm->vmcb->control.virt_ext &= ~LBR_CTL_ENABLE_MASK;
-	set_msr_interception(msrpm, MSR_IA32_LASTBRANCHFROMIP, 0, 0);
-	set_msr_interception(msrpm, MSR_IA32_LASTBRANCHTOIP, 0, 0);
-	set_msr_interception(msrpm, MSR_IA32_LASTINTFROMIP, 0, 0);
-	set_msr_interception(msrpm, MSR_IA32_LASTINTTOIP, 0, 0);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTBRANCHFROMIP, 0, 0);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTBRANCHTOIP, 0, 0);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTINTFROMIP, 0, 0);
+	set_msr_interception(svm->vmcb, msrpm,
+			     MSR_IA32_LASTINTTOIP, 0, 0);
 }
 
 void disable_nmi_singlestep(struct vcpu_svm *svm)
@@ -1007,6 +1028,9 @@ static void hv_init_vmcb(struct vmcb *vmcb)
 	if (npt_enabled &&
 	    ms_hyperv.nested_features & HV_X64_NESTED_ENLIGHTENED_TLB)
 		hve->hv_enlightenments_control.enlightened_npt_tlb = 1;
+
+	if (ms_hyperv.nested_features & HV_X64_NESTED_MSR_BITMAP)
+		hve->hv_enlightenments_control.msr_bitmap = 1;
 }
 #else
 static inline void hv_init_vmcb(struct vmcb *vmcb)
@@ -1242,10 +1266,10 @@ static int svm_create_vcpu(struct kvm_vcpu *vcpu)
 	clear_page(svm->nested.hsave);
 
 	svm->msrpm = page_address(msrpm_pages);
-	svm_vcpu_init_msrpm(svm->msrpm);
+	svm_vcpu_init_msrpm(svm->vmcb, svm->msrpm);
 
 	svm->nested.msrpm = page_address(nested_msrpm_pages);
-	svm_vcpu_init_msrpm(svm->nested.msrpm);
+	svm_vcpu_init_msrpm(svm->vmcb, svm->nested.msrpm);
 
 	svm->vmcb = page_address(page);
 	clear_page(svm->vmcb);
@@ -2593,7 +2617,8 @@ static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
 		 * We update the L1 MSR bit as well since it will end up
 		 * touching the MSR anyway now.
 		 */
-		set_msr_interception(svm->msrpm, MSR_IA32_SPEC_CTRL, 1, 1);
+		set_msr_interception(svm->vmcb, svm->msrpm,
+				     MSR_IA32_SPEC_CTRL, 1, 1);
 		break;
 	case MSR_IA32_PRED_CMD:
 		if (!msr->host_initiated &&
@@ -2608,7 +2633,8 @@ static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
 			break;
 
 		wrmsrl(MSR_IA32_PRED_CMD, PRED_CMD_IBPB);
-		set_msr_interception(svm->msrpm, MSR_IA32_PRED_CMD, 0, 1);
+		set_msr_interception(svm->vmcb, svm->msrpm,
+				     MSR_IA32_PRED_CMD, 0, 1);
 		break;
 	case MSR_AMD64_VIRT_SPEC_CTRL:
 		if (!msr->host_initiated &&
